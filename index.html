@@ -1,0 +1,369 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JSON Viewer</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --toolbar:#ece9d8;
+    --border:#aca899;
+    --text:#000000;
+    --text-dim:#6b6b6b;
+    --tab-inactive:#d4d0c4;
+    --guide:#c9c9c9;
+    --obj-icon:#1a3f9c;
+    --str-icon:#3b6fd6;
+    --num-icon:#4c9a3a;
+    --bool-icon:#c2a23a;
+    --null-icon:#9a9a9a;
+    --err:#c00000;
+    font-family: Tahoma, Verdana, Arial, "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    flex-direction:column;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    font-size:12px;
+  }
+
+  /* tab bar */
+  .tabbar{
+    display:flex;
+    gap:2px;
+    padding:6px 10px 0 10px;
+    background:var(--toolbar);
+    border-bottom:1px solid var(--border);
+  }
+  .tab{
+    font-family:inherit;
+    font-size:12px;
+    background:var(--tab-inactive);
+    color:var(--text-dim);
+    border:1px solid var(--border);
+    border-bottom:none;
+    padding:6px 18px;
+    border-radius:8px 8px 0 0;
+    cursor:pointer;
+    position:relative;
+    top:1px;
+  }
+  .tab.active{
+    background:#ffffff;
+    color:var(--text);
+    font-weight:bold;
+    border-bottom:1px solid #ffffff;
+  }
+  .tab:hover:not(.active){ background:#e2ded0; }
+
+  /* Text-tab action bar */
+  .text-toolbar{
+    display:none;
+    align-items:center;
+    gap:14px;
+    padding:8px 14px;
+    background:var(--toolbar);
+    border-bottom:1px solid var(--border);
+    font-size:12.5px;
+  }
+  .text-toolbar.visible{ display:flex; }
+  .text-toolbar .grp{ display:flex; align-items:center; gap:14px; }
+  .text-toolbar .act{
+    background:none;
+    border:none;
+    padding:2px 0;
+    font-family:inherit;
+    font-size:12.5px;
+    color:#1a1a1a;
+    cursor:pointer;
+  }
+  .text-toolbar .act:hover{ color:#1a4fd6; text-decoration:underline; }
+  .text-toolbar .sep{ color:var(--border); }
+
+  main{ flex:1; display:flex; min-height:0; background:#ffffff; border-radius:0 0 8px 8px; overflow:hidden; }
+  .tab-content{ flex:1; min-height:0; display:none; overflow:auto; }
+  .tab-content.active{ display:block; }
+
+  #viewerPane{ padding:12px 14px; }
+
+  textarea{
+    width:100%; height:100%; resize:none; background:transparent; border:none; outline:none;
+    color:var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+    font-size:12.5px; line-height:1.5; white-space:pre; padding:12px 14px;
+  }
+  textarea::placeholder{ color:#999; }
+
+  /* classic explorer-style tree */
+  #tree{ font-size:12.5px; line-height:22px; }
+  .children{ margin-left:5px; padding-left:13px; border-left:1px dotted var(--guide); }
+  .row{ display:flex; align-items:flex-start; white-space:pre; }
+  .lead{
+    width:13px; height:13px; flex-shrink:0; margin-right:6px; margin-top:5px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .toggle{
+    width:12px; height:12px; border:1px solid #6b7fb0; background:#ffffff; color:#000;
+    cursor:pointer; user-select:none; font-family: monospace; font-weight:bold;
+    font-size:10px; line-height:10px; text-align:center;
+  }
+  .toggle:hover{ background:#dbe6f5; }
+  .dot{ width:5px; height:5px; border-radius:50%; background:#c9c9c9; }
+  .ico{
+    flex-shrink:0; margin-right:6px; margin-top:4px;
+    font-family: Consolas, monospace; font-weight:bold; font-size:11px; line-height:14px;
+    color:var(--obj-icon);
+  }
+  .sq{ width:9px; height:9px; margin-right:6px; margin-top:6px; flex-shrink:0; }
+  .sq-str{ background:var(--str-icon); }
+  .sq-num{ background:var(--num-icon); }
+  .sq-bool{ background:var(--bool-icon); }
+  .sq-null{ background:#ffffff; border:1.5px dashed var(--null-icon); }
+
+  .label{ color:#000; }
+  .val, .val-str{ color:#000; }
+  .punc{ color:#555; }
+
+  .collapsed > .children{ display:none; }
+  .rowline:hover{ background:#eef3fc; }
+
+  #emptyState{ color:var(--text-dim); font-size:12px; padding:6px 0; }
+</style>
+</head>
+<body>
+
+<div class="tabbar">
+  <button class="tab" id="tabViewerBtn">Viewer</button>
+  <button class="tab active" id="tabTextBtn">Text</button>
+</div>
+
+<div class="text-toolbar visible" id="textToolbar">
+  <div class="grp">
+    <button class="act" id="pasteBtn">Paste</button>
+    <button class="act" id="copyBtn">Copy</button>
+  </div>
+  <span class="sep">|</span>
+  <div class="grp">
+    <button class="act" id="formatBtn">Format</button>
+    <button class="act" id="whitespaceBtn">Remove white space</button>
+  </div>
+  <span class="sep">|</span>
+  <button class="act" id="clearBtn">Clear</button>
+  <span class="sep">|</span>
+  <button class="act" id="loadBtn">Load JSON data</button>
+  <input type="file" id="fileInput" accept=".json,application/json,text/plain" style="display:none">
+</div>
+
+<main>
+  <div class="tab-content active" id="viewerPane">
+    <div id="emptyState">Switch to the Text tab and paste JSON.</div>
+    <div id="tree"></div>
+  </div>
+
+  <div class="tab-content" id="textPane">
+    <textarea id="input" spellcheck="false" placeholder="Paste JSON here…"></textarea>
+  </div>
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  const input = document.getElementById('input');
+  const tree = document.getElementById('tree');
+  const emptyState = document.getElementById('emptyState');
+  const textPane = document.getElementById('textPane');
+  const viewerPane = document.getElementById('viewerPane');
+  const tabViewerBtn = document.getElementById('tabViewerBtn');
+  const tabTextBtn = document.getElementById('tabTextBtn');
+  const textToolbar = document.getElementById('textToolbar');
+  const fileInput = document.getElementById('fileInput');
+
+  function escapeHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function showTab(which){
+    const viewer = which === 'viewer';
+    viewerPane.classList.toggle('active', viewer);
+    textPane.classList.toggle('active', !viewer);
+    tabViewerBtn.classList.toggle('active', viewer);
+    tabTextBtn.classList.toggle('active', !viewer);
+    textToolbar.classList.toggle('visible', !viewer);
+  }
+  tabViewerBtn.addEventListener('click', () => showTab('viewer'));
+  tabTextBtn.addEventListener('click', () => showTab('text'));
+
+  function renderScalarValue(v){
+    if (v === null) return '<span class="val">null</span>';
+    switch (typeof v){
+      case 'string': return '<span class="val-str">"' + escapeHtml(v).replace(/\n/g,'\\n') + '"</span>';
+      default: return '<span class="val">' + v + '</span>';
+    }
+  }
+
+  function buildNode(label, value){
+    const wrap = document.createElement('div');
+    wrap.className = 'entry';
+
+    const isContainer = value !== null && typeof value === 'object';
+    const row = document.createElement('div');
+    row.className = 'row rowline';
+
+    const lead = document.createElement('span');
+    lead.className = 'lead';
+    if (isContainer){
+      const toggle = document.createElement('span');
+      toggle.className = 'toggle';
+      toggle.textContent = '-';
+      toggle.addEventListener('click', () => {
+        wrap.classList.toggle('collapsed');
+        toggle.textContent = wrap.classList.contains('collapsed') ? '+' : '-';
+      });
+      lead.appendChild(toggle);
+    } else {
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      lead.appendChild(dot);
+    }
+    row.appendChild(lead);
+
+    const icoSpan = document.createElement('span');
+    if (value === null){
+      icoSpan.className = 'sq sq-null';
+    } else if (Array.isArray(value)){
+      icoSpan.className = 'ico'; icoSpan.textContent = '[ ]';
+    } else if (typeof value === 'object'){
+      icoSpan.className = 'ico'; icoSpan.textContent = '{ }';
+    } else if (typeof value === 'string'){
+      icoSpan.className = 'sq sq-str';
+    } else if (typeof value === 'number'){
+      icoSpan.className = 'sq sq-num';
+    } else if (typeof value === 'boolean'){
+      icoSpan.className = 'sq sq-bool';
+    }
+    row.appendChild(icoSpan);
+
+    const labelSpan = document.createElement('span');
+    let html = '<span class="label">' + escapeHtml(label) + '</span>';
+    if (!isContainer){
+      html += '<span class="punc"> : </span>' + renderScalarValue(value);
+    }
+    labelSpan.innerHTML = html;
+    row.appendChild(labelSpan);
+    wrap.appendChild(row);
+
+    if (isContainer){
+      const keys = Object.keys(value);
+      if (keys.length){
+        const children = document.createElement('div');
+        children.className = 'children';
+        keys.forEach((k) => children.appendChild(buildNode(k, value[k])));
+        wrap.appendChild(children);
+      }
+    }
+
+    return wrap;
+  }
+
+  function showEmpty(msg){
+    tree.style.display = 'none';
+    tree.innerHTML = '';
+    emptyState.style.display = 'block';
+    emptyState.innerHTML = msg;
+  }
+
+  function tryParse(){
+    const raw = input.value;
+    if (!raw.trim()){
+      showEmpty('Switch to the Text tab and paste JSON.');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      tree.innerHTML = '';
+      tree.appendChild(buildNode('JSON', parsed));
+      emptyState.style.display = 'none';
+      tree.style.display = 'block';
+      showTab('viewer');
+    } catch (e) {
+      showEmpty('Invalid JSON — ' + escapeHtml(e.message));
+    }
+  }
+
+  let debounceTimer;
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(tryParse, 350);
+  });
+
+  // --- Text-tab actions ---
+  document.getElementById('pasteBtn').addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      input.value = text;
+      tryParse();
+    } catch (e) {
+      input.focus();
+      // clipboard permission denied or unavailable — fall back to manual paste (Ctrl/Cmd+V)
+    }
+  });
+
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    if (!input.value) return;
+    navigator.clipboard.writeText(input.value).catch(() => {
+      input.select();
+      document.execCommand('copy');
+    });
+  });
+
+  document.getElementById('formatBtn').addEventListener('click', () => {
+    if (!input.value.trim()) return;
+    try {
+      input.value = JSON.stringify(JSON.parse(input.value), null, 2);
+      tryParse();
+    } catch (e) {
+      showEmpty('Invalid JSON — ' + escapeHtml(e.message));
+    }
+  });
+
+  document.getElementById('whitespaceBtn').addEventListener('click', () => {
+    if (!input.value.trim()) return;
+    try {
+      input.value = JSON.stringify(JSON.parse(input.value));
+      tryParse();
+    } catch (e) {
+      showEmpty('Invalid JSON — ' + escapeHtml(e.message));
+    }
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    input.value = '';
+    showEmpty('Switch to the Text tab and paste JSON.');
+    input.focus();
+  });
+
+  document.getElementById('loadBtn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      input.value = ev.target.result;
+      tryParse();
+    };
+    reader.readAsText(file);
+  });
+
+  showTab('text');
+})();
+</script>
+</body>
+</html>
